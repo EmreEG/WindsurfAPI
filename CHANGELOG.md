@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="#最近的版本">最近的版本</a> ·
-  <a href="docs/releases/">全部 179 份发布说明</a> ·
+  <a href="docs/releases/">全部 180 份发布说明</a> ·
   <a href="README.md">← 主 README</a>
 </p>
 
@@ -19,9 +19,9 @@
 
 | | |
 |---|---|
-| 发布说明 | **179** 份,v2.0.6 → v3.9.28 |
-| git tag | 190 个 |
-| 当前 | **v3.9.28**(2026-08-23) |
+| 发布说明 | **180** 份,v2.0.6 → v3.9.29 |
+| git tag | 191 个 |
+| 当前 | **v3.9.29**(2026-08-28) |
 | 运行时依赖 | **0** —— 从第一个版本保持到现在 |
 
 ```mermaid
@@ -29,7 +29,7 @@ flowchart LR
     A["v2.0.x<br/>118 个 tag<br/><br/>OpenAI 兼容层成型"]
     B["v3.0 – v3.8<br/><br/>Anthropic / Gemini 前端<br/>Dashboard 与账号池"]
     C["v3.9.0 – v3.9.16<br/><br/>DEVIN_CONNECT 直连<br/>native tool bridge"]
-    D["v3.9.17 – v3.9.28<br/><br/>工具方言 · reasoning 边界<br/>Connect 目录 · ACU opt-in"]
+    D["v3.9.17 – v3.9.29<br/><br/>工具方言 · reasoning 边界<br/>Connect 目录 · ACU opt-in"]
     A --> B --> C --> D
 
     classDef past fill:#8957e522,stroke:#8957e5
@@ -41,6 +41,10 @@ flowchart LR
 ## 最近的版本
 
 下面是 3.9.x 全系。更早的版本请直接翻 [`docs/releases/`](docs/releases/)。
+
+### [v3.9.29](docs/releases/RELEASE_NOTES_3.9.29.md) · 2026-08-28
+
+Dashboard 401 不再刷空 stats 表；login/OTP 先脱敏再截断。OTA 才能吃到 `09bde39` 同类 401 空表。ACU `^22` 仍默认关。
 
 ### [v3.9.28](docs/releases/RELEASE_NOTES_3.9.28.md) · 2026-08-23
 
