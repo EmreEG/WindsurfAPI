@@ -39,10 +39,15 @@ describe('log safety helpers', () => {
     assert.ok(sliced.length <= 80);
   });
 
-  it('windsurf-login does not slice raw JSON before redaction', () => {
-    const src = readFileSync('src/dashboard/windsurf-login.js', 'utf8');
-    assert.doesNotMatch(src, /JSON\.stringify\([^)]*\)\.slice\(0,\s*120\)/);
-    assert.match(src, /sliceRedactedJson/);
+  it('login paths do not slice raw JSON before redaction', () => {
+    for (const file of [
+      'src/dashboard/windsurf-login.js',
+      'src/dashboard/email-otp-login.js',
+    ]) {
+      const src = readFileSync(file, 'utf8');
+      assert.doesNotMatch(src, /JSON\.stringify\([^)]*\)\.slice\(0,\s*\d+\)/, file);
+      assert.match(src, /sliceRedactedJson/, file);
+    }
   });
 
   it('does not reintroduce raw account labels or API key prefixes in sensitive logs', () => {

@@ -18,7 +18,7 @@
 import tls from 'node:tls';
 import { config, log } from '../config.js';
 import { resolveProxyConnectHost } from '../net-safety.js';
-import { safeEmailRef, safeKeyRef } from '../log-safety.js';
+import { safeEmailRef, safeKeyRef, sliceRedactedJson } from '../log-safety.js';
 
 // Test-only transport seam (same pattern as windsurf-login.js __setLoginTransportForTests)
 let _transportOverride = null;
@@ -197,7 +197,7 @@ export async function sendEmailVerification(email, firstName, turnstileToken, pr
     if (/turnstile/i.test(errMsg)) {
       throw new Error('ERR_TURNSTILE_INVALID');
     }
-    throw new Error(`ERR_EMAIL_VERIFICATION_FAILED: HTTP ${res.status}: ${errMsg.slice(0, 200)}`);
+    throw new Error(`ERR_EMAIL_VERIFICATION_FAILED: HTTP ${res.status}: ${sliceRedactedJson(res.data, 200)}`);
   }
 
   log.info(`SendEmailVerification OK: ${safeEmailRef(email)}`);
@@ -235,7 +235,7 @@ export async function registerUserWithOtp(email, otpCode, turnstileToken, firstN
     if (/otp|code|verification/i.test(errMsg)) {
       throw new Error('ERR_OTP_INVALID');
     }
-    throw new Error(`ERR_REGISTRATION_FAILED: HTTP ${res.status}: ${errMsg.slice(0, 200)}`);
+    throw new Error(`ERR_REGISTRATION_FAILED: HTTP ${res.status}: ${sliceRedactedJson(res.data, 200)}`);
   }
 
   const apiKey = res.data?.api_key || res.data?.apiKey;
@@ -243,7 +243,7 @@ export async function registerUserWithOtp(email, otpCode, turnstileToken, firstN
   const apiServerUrl = res.data?.api_server_url || res.data?.apiServerUrl || '';
 
   if (!apiKey) {
-    throw new Error(`ERR_REGISTRATION_FAILED: no api_key in response: ${JSON.stringify(res.data).slice(0, 200)}`);
+    throw new Error(`ERR_REGISTRATION_FAILED: no api_key in response: ${sliceRedactedJson(res.data, 200)}`);
   }
 
   log.info(`RegisterUser OK: ${safeEmailRef(email)} → ${safeKeyRef(apiKey, 'apiKey')}`);

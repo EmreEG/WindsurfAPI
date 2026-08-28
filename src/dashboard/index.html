@@ -7950,6 +7950,7 @@ void main(){ vec3 s=texture(u_scene,v_uv).rgb; vec3 g=texture(u_glow,v_uv).rgb; 
 
   async loadStats() {
     const d = await this.api('GET', '/stats');
+    if (d?.success === false) return;
     this._lastStatsData = d;
     const totalReq = d.totalRequests || 0;
     const successRate = totalReq > 0 ? ((d.successCount/totalReq)*100).toFixed(1) : '0.0';

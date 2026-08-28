@@ -283,7 +283,7 @@ describe('#257 UI maps a 401 add to the generic Add failed toast', () => {
     };
     for (const rel of ['src/dashboard/index.html', 'src/dashboard/index-sketch.html']) {
       const html = readFileSync(join(ROOT, rel), 'utf8');
-      for (const name of ['loadOverview', 'loadModels', 'loadProxy', 'loadBans']) {
+      for (const name of ['loadOverview', 'loadModels', 'loadProxy', 'loadBans', 'loadStats']) {
         assert.match(
           sliceFn(html, name),
           /success === false/,

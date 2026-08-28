@@ -520,7 +520,7 @@ async function windsurfLoginViaAuth1(email, password, fingerprint, proxy) {
 
   const auth1Token = loginRes.data?.token;
   if (!auth1Token) {
-    throw new Error(`ERR_AUTH1_TOKEN_MISSING:${JSON.stringify(loginRes.data).slice(0, 200)}`);
+    throw new Error(`ERR_AUTH1_TOKEN_MISSING:${sliceRedactedJson(loginRes.data, 200)}`);
   }
 
   log.info(`Auth1 login OK: ${safeEmailRef(email)}`);
@@ -557,7 +557,7 @@ async function windsurfLoginViaAuth1(email, password, fingerprint, proxy) {
   // too. Devin path is the only one that works post-2026-05-04.
   const { res: br, label: bl } = await postAuthDualPath(auth1Token, fingerprint, proxy);
   if (br.status >= 400 || !br.data?.sessionToken) {
-    throw new Error(`ERR_POSTAUTH_FAILED:${JSON.stringify(br.data).slice(0, 200)}`);
+    throw new Error(`ERR_POSTAUTH_FAILED:${sliceRedactedJson(br.data, 200)}`);
   }
   const sessionToken = br.data.sessionToken;
   const accountId = br.data.accountId || 'unknown';
@@ -626,7 +626,7 @@ async function windsurfLoginViaDevinHost(email, password, fingerprint, proxy) {
 
   const auth1Token = loginRes.data?.token;
   if (!auth1Token) {
-    throw new Error(`ERR_AUTH1_TOKEN_MISSING:${JSON.stringify(loginRes.data).slice(0, 200)}`);
+    throw new Error(`ERR_AUTH1_TOKEN_MISSING:${sliceRedactedJson(loginRes.data, 200)}`);
   }
   log.info(`Devin-host Auth1 login OK: ${safeEmailRef(email)}`);
 
@@ -635,7 +635,7 @@ async function windsurfLoginViaDevinHost(email, password, fingerprint, proxy) {
   // not yet live-confirmed.
   const { res: br, label: bl } = await postAuthDualPath(auth1Token, fingerprint, proxy);
   if (br.status >= 400 || !br.data?.sessionToken) {
-    throw new Error(`ERR_POSTAUTH_FAILED:${JSON.stringify(br.data).slice(0, 200)}`);
+    throw new Error(`ERR_POSTAUTH_FAILED:${sliceRedactedJson(br.data, 200)}`);
   }
   const sessionToken = br.data.sessionToken;
   const accountId = br.data.accountId || 'unknown';
@@ -926,7 +926,7 @@ export async function refreshFirebaseToken(refreshToken, proxy = null) {
   const expiresIn = parseInt(res.data?.expires_in || res.data?.expiresIn || '3600', 10);
 
   if (!newIdToken) {
-    throw new Error(`Firebase token refresh: no idToken in response: ${JSON.stringify(res.data).slice(0, 200)}`);
+    throw new Error(`Firebase token refresh: no idToken in response: ${sliceRedactedJson(res.data, 200)}`);
   }
 
   log.info(`Firebase token refreshed, expires in ${expiresIn}s`);

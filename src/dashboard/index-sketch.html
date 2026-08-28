@@ -3246,6 +3246,7 @@ const App = {
        hourlyBuckets: [ { hour, requests, errors } ] }.
        Original sketch read r.hourly / r.models / r.accounts which were never sent. */
     const r = await this.api('GET', '/stats');
+    if (r?.success === false) return;
     const total = r.totalRequests || 0;
     const success = r.successCount || 0;
     const errors = r.errorCount || 0;
