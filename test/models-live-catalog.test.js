@@ -78,6 +78,21 @@ describe('/v1/models — live-catalog synthesis (audit v3.2.4)', () => {
       resolveConnectSelector(matching[0]._windsurf_id, { warnOnFallback: false }).selector,
       'gpt-5-5-low',
     );
+    assert.equal(matching[0].id, 'gpt-5.5',
+      'family alias gpt-5.5 stays the discovery id; do not retarget to gpt-5.5-low');
+  });
+
+  it('lists glm-5.2, not glm-5.1, when both resolve to selector glm-5-2', () => {
+    const { data } = handleModels(ENV_ON);
+    const ids = data.map((m) => m.id);
+    assert.equal(ids.includes('glm-5.2'), true, 'glm-5.2 must be the public discovery id');
+    assert.equal(ids.includes('glm-5.1'), false,
+      'glm-5.1 is a SELECTOR_MAP alias of glm-5-2 and must not hide glm-5.2');
+    const row = data.find((m) => m.id === 'glm-5.2');
+    assert.equal(
+      resolveConnectSelector(row._windsurf_id, { warnOnFallback: false }).selector,
+      'glm-5-2',
+    );
   });
 
   it('non-DEVIN_CONNECT deployment returns the full list without live synthesis', () => {

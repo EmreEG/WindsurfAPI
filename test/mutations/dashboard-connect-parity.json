@@ -5,7 +5,7 @@
     "test/cloud-catalog-backend-boundary.test.js",
     "test/models-live-catalog.test.js"
   ],
-  "expectBaselinePass": 34,
+  "expectBaselinePass": 35,
   "mutations": [
     {
       "name": "the original defect: dashboard stops annotating and reports everything reachable",

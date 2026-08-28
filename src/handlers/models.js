@@ -127,13 +127,23 @@ export function handleModels(env = process.env) {
     // Discovery is a selector catalog, not an alias catalog. Several public names
     // can resolve to the same upstream selector. Keep the first stable client-facing
     // name and suppress the rest so one upstream model is not listed repeatedly.
+    // Exception: glm-5.1 is a SELECTOR_MAP alias of glm-5-2 and sits earlier in
+    // MODELS than glm-5.2, so first-wins would advertise the stale name. Prefer
+    // the public id that matches the selector family (glm-5.2). Do not generalize
+    // to prefix-rank: that would also retarget gpt-5.5 → gpt-5.5-low.
     const representedSelectors = new Set();
-    data = data.flatMap((m) => {
+    const listed = data;
+    data = listed.flatMap((m) => {
       const reachability = isReachable(m._windsurf_id);
       if (!reachability.reachable || representedSelectors.has(reachability.selector)) return [];
       representedSelectors.add(reachability.selector);
+      let row = m;
+      if (reachability.selector === 'glm-5-2' && m.id !== 'glm-5.2') {
+        const canonical = listed.find((x) => x.id === 'glm-5.2');
+        if (canonical) row = canonical;
+      }
       const supportsImages = imageCapabilityBySelector.get(reachability.selector);
-      return [typeof supportsImages === 'boolean' ? { ...m, supports_images: supportsImages } : m];
+      return [typeof supportsImages === 'boolean' ? { ...row, supports_images: supportsImages } : row];
     });
     // Producers #2 and #3 below are keyed by SELECTOR, not by a MODELS id, so they cannot
     // go through isReachable — it resolves its argument through resolveConnectSelector.
