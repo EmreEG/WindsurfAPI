@@ -115,6 +115,43 @@ function weakToolRank(name) {
   return i === -1 ? WEAK_TOOL_PRIORITY.length : i;
 }
 
+function trimToolsToLimit(tools, limit, toolChoice) {
+  if (!Array.isArray(tools) || tools.length <= limit) {
+    return { tools, trimmed: false, kept: Array.isArray(tools) ? tools.length : 0, dropped: 0 };
+  }
+  const nameOf = (tool) => (tool && tool.function && tool.function.name) || tool?.name || '';
+  let forced = null;
+  if (toolChoice && typeof toolChoice === 'object') {
+    forced = toolChoice.function?.name || toolChoice.name || null;
+  }
+  const decorated = tools.map((tool, index) => ({
+    tool,
+    index,
+    rank: weakToolRank(nameOf(tool)),
+    forced: forced && nameOf(tool) === forced,
+  }));
+  decorated.sort((a, b) => {
+    if (a.forced !== b.forced) return a.forced ? -1 : 1;
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return a.index - b.index;
+  });
+  const kept = decorated.slice(0, limit).sort((a, b) => a.index - b.index).map(({ tool }) => tool);
+  return { tools: kept, trimmed: true, kept: kept.length, dropped: tools.length - kept.length };
+}
+
+// The direct GetChatMessage backend accepts at most 128 native tool definitions.
+// Above that it returns the opaque UPSTREAM_INTERNAL error seen in trace
+// 379257bc09ebd83f422386939756a461. This is a request-shape limit, not a model
+// or account fault, so cap it before the request leaves the proxy.
+export function nativeModelToolLimit(env = process.env) {
+  const raw = Number(env.DEVIN_CONNECT_NATIVE_TOOL_LIMIT);
+  return Number.isFinite(raw) && raw > 0 ? Math.min(Math.floor(raw), 128) : 128;
+}
+
+export function trimToolsForNativeLimit(tools, opts = {}) {
+  return trimToolsToLimit(tools, nativeModelToolLimit(opts.env || process.env), opts.toolChoice);
+}
+
 /**
  * Intelligently trim a tool list down to what a weak model (fable) can handle.
  * Returns the ORIGINAL array untouched when trimming isn't needed (not a weak
@@ -141,26 +178,7 @@ export function trimToolsForWeakModel(tools, modelKey, opts = {}) {
   if (tools.length <= limit) {
     return { tools, trimmed: false, kept: tools.length, dropped: 0 };
   }
-  const nameOf = (t) => (t && t.function && t.function.name) || t?.name || '';
-  // Force-keep a tool_choice-named tool.
-  let forced = null;
-  const tc = opts.toolChoice;
-  if (tc && typeof tc === 'object') {
-    forced = tc.function?.name || tc.name || null;
-  }
-  // Decorate with original index so the sort is stable within a priority tier.
-  const decorated = tools.map((t, i) => ({ t, i, rank: weakToolRank(nameOf(t)), forced: forced && nameOf(t) === forced }));
-  decorated.sort((a, b) => {
-    if (a.forced !== b.forced) return a.forced ? -1 : 1;   // forced first
-    if (a.rank !== b.rank) return a.rank - b.rank;          // priority tier
-    return a.i - b.i;                                       // original order
-  });
-  const keptDecorated = decorated.slice(0, limit);
-  // Restore original request order among the kept tools (agents don't care, but
-  // it keeps the wire stable/diffable and avoids surprising the model).
-  keptDecorated.sort((a, b) => a.i - b.i);
-  const kept = keptDecorated.map((d) => d.t);
-  return { tools: kept, trimmed: true, kept: kept.length, dropped: tools.length - kept.length };
+  return trimToolsToLimit(tools, limit, opts.toolChoice);
 }
 
 export function buildToolPreamble(tools, toolChoice = 'auto', modelKey = null, provider = null, route = null, opts = {}) {

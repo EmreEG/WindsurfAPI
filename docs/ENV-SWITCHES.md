@@ -134,6 +134,7 @@ PY
 | `WINDSURFAPI_NEUTRALIZE_CLINE_OBJECTIVE` | 空（= 关） | 中和 Cline 客户端的 objective 段（`\|\| ''`）。 |
 | `WINDSURFAPI_SHOW_DISABLED_SPECIAL_AGENT_MODELS` | 关 | 在模型列表里也显示上游标记为 disabled 的 special agent 模型（`models.js`，`=== '1'`）。默认隐藏 —— 列出来客户端也调不通。 |
 | `WINDSURFAPI_WEAK_MODEL_TOOL_LIMIT` | `8` | 弱模型最多带几个工具定义（`handlers/tool-emulation.js`，非有限值或 ≤0 回落 8）。工具多了弱模型会选错。 |
+| `DEVIN_CONNECT_NATIVE_TOOL_LIMIT` | `128` | DEVIN_CONNECT 原生工具定义硬上限。上游超过 128 个会返回不透明 `UPSTREAM_INTERNAL`；服务端会按强制工具、核心工具、原顺序优先级裁剪。配置值也不能超过 128。 |
 | `DEVIN_CONNECT_RELOGIN_MAX_CONCURRENT` | `2` | 同时最多几个账号并发重登（`auth.js`，`>= 1` 才生效否则回落 2，且会 `Math.floor`）。调大会更快恢复但更容易撞上游限流。 |
 
 ## 未经抓包证实的 wire 坐标（全部默认关，开之前先读这段）

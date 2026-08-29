@@ -867,6 +867,11 @@ export async function __waitForModelCatalogSync() {
   );
 }
 
+/** Whether a live DEVIN_CONNECT catalog request is currently in flight. */
+export function isConnectCatalogSyncInFlight() {
+  return _connectCatalogSyncPromises.size > 0;
+}
+
 function cancelModelCatalogRetry(accountId) {
   const cancel = _modelCatalogRetryCancels.get(accountId);
   _modelCatalogRetryCancels.delete(accountId);

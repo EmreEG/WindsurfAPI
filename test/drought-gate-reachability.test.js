@@ -194,6 +194,7 @@ describe('drought gate structure — escape points (#234)', () => {
     //                                model_not_found beats a misleading 503.
     const ACCEPTED_ESCAPES = [
       { match: /handleSpecialAgentChatCompletion/, why: 'ACP vision reroute → special_agent namespace' },
+      { match: /model_catalog_initializing/, why: 'catalog not ready → retryable readiness response' },
       { match: /code: 'model_not_found'/, why: 'unresolvable model name → precise 400' },
     ];
 

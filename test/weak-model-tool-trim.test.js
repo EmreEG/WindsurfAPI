@@ -4,11 +4,47 @@
 // only, keeping tool_choice-forced + top agent primitives.
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { trimToolsForWeakModel, weakModelToolLimit } from '../src/handlers/tool-emulation.js';
+import {
+  nativeModelToolLimit,
+  trimToolsForNativeLimit,
+  trimToolsForWeakModel,
+  weakModelToolLimit,
+} from '../src/handlers/tool-emulation.js';
 
 const mkTools = (names) => names.map((n) => ({ type: 'function', function: { name: n, description: n, parameters: { type: 'object', properties: {} } } }));
 
-afterEach(() => { delete process.env.WINDSURFAPI_WEAK_MODEL_TOOL_LIMIT; });
+afterEach(() => {
+  delete process.env.WINDSURFAPI_WEAK_MODEL_TOOL_LIMIT;
+  delete process.env.DEVIN_CONNECT_NATIVE_TOOL_LIMIT;
+});
+
+describe('trimToolsForNativeLimit', () => {
+  it('caps native tools at the upstream maximum of 128', () => {
+    const tools = mkTools(Array.from({ length: 129 }, (_, i) => `tool${i}`));
+    const result = trimToolsForNativeLimit(tools);
+    assert.equal(nativeModelToolLimit(), 128);
+    assert.equal(result.trimmed, true);
+    assert.equal(result.kept, 128);
+    assert.equal(result.dropped, 1);
+  });
+
+  it('keeps a forced tool and priority primitives when native tools overflow', () => {
+    const names = Array.from({ length: 127 }, (_, i) => `junk${i}`);
+    names.push('Read', 'forced_last');
+    const result = trimToolsForNativeLimit(mkTools(names), {
+      toolChoice: { type: 'function', function: { name: 'forced_last' } },
+    });
+    const kept = result.tools.map((tool) => tool.function.name);
+    assert.ok(kept.includes('Read'));
+    assert.ok(kept.includes('forced_last'));
+    assert.equal(kept.length, 128);
+  });
+
+  it('never permits configuration above the hard upstream ceiling', () => {
+    process.env.DEVIN_CONNECT_NATIVE_TOOL_LIMIT = '1000';
+    assert.equal(nativeModelToolLimit(), 128);
+  });
+});
 
 describe('trimToolsForWeakModel', () => {
   it('is a no-op for a non-weak model (opus keeps all 30)', () => {

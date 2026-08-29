@@ -5,7 +5,7 @@
 
 import { createHash, randomUUID } from 'crypto';
 import { WindsurfClient, contentToString, isCascadeTransportError } from '../client.js';
-import { getApiKey, acquireAccountByKey, releaseAccountById, currentApiKeyForId, getAccountAvailability, reportError, reportSuccess, markRateLimited, markQuotaExhausted, reportInternalError, reportDeadToken, updateCapability, getAccountList, isAllRateLimited, isAllTemporarilyUnavailable, refundReservation, looksLikeBanSignal, reportBanSignal, clearBanSignals, isModelBlockedByDrought, isConnectSelectorBlockedByDrought, getDroughtSummary, reLoginAccount, getAccountCount, hasConnectEntitledAccount, recordAccountSpend, ensureDeviceSeed } from '../auth.js';
+import { getApiKey, acquireAccountByKey, releaseAccountById, currentApiKeyForId, getAccountAvailability, reportError, reportSuccess, markRateLimited, markQuotaExhausted, reportInternalError, reportDeadToken, updateCapability, getAccountList, isAllRateLimited, isAllTemporarilyUnavailable, refundReservation, looksLikeBanSignal, clearBanSignals, isModelBlockedByDrought, isConnectSelectorBlockedByDrought, getDroughtSummary, reLoginAccount, getAccountCount, hasConnectEntitledAccount, recordAccountSpend, ensureDeviceSeed, __waitForModelCatalogSync, isConnectCatalogSyncInFlight } from '../auth.js';
 import { isStickyEnabled, setStickyBinding, peekStickyBinding } from '../account/sticky-session.js';
 import { resolveModel, getModelInfo, pickRateLimitFallback, isModelDisabledUpstream, getModelCaps } from '../models.js';
 import { getLsFor, ensureLs } from '../langserver.js';
@@ -42,6 +42,7 @@ import {
   buildToolPreambleForProto, buildCompactToolPreambleForProto,
   buildSchemaCompactToolPreambleForProto, buildSkinnyToolPreambleForProto,
   trimToolsForWeakModel, isWeakEmulationModel,
+  trimToolsForNativeLimit,
 } from './tool-emulation.js';
 import {
   getNativeBridgeDecision, buildReverseLookup,
@@ -55,7 +56,7 @@ import {
 import { acpVisionEnabled } from '../devin-acp.js';
 import { selectBackend, usesCascadeFlow } from '../backend-router.js';
 import { toChatCompletion as _toChatCompletion, streamChatCompletion as _streamChatCompletion } from '../devin-connect-openai.js';
-import { resolveConnectSelector } from '../devin-connect-models.js';
+import { hasLiveCatalog, resolveConnectSelector } from '../devin-connect-models.js';
 import { isRetryable as isConnectRetryable, getToolDefTags, parseToolCallTagMap } from '../devin-connect.js';
 import { isRouterModel, assignModel as _assignModel } from '../devin-connect-catalog.js';
 import { bumpConnect } from '../devin-connect-metrics.js';
@@ -3156,6 +3157,35 @@ async function _handleChatCompletionsInner(body, context = {}) {
   // the backend. Unmapped names degrade to the free-tier selector downstream.
   if (selectBackend({ modelInfo }).flow === 'devin_connect') {
     const reqModelName = accessFallbackModel || reqModel || config.defaultModel;
+    // A freshly restarted provider accepts HTTP before its asynchronous
+    // GetCliModelConfigs sync has populated Connect selectors. Resolving during
+    // that window falsely reports valid Sol/Terra/etc. IDs as model_not_found.
+    // Wait for the already-started sync, boundedly; if it cannot become ready,
+    // surface a retryable readiness error rather than a permanent invalid-model
+    // verdict. The sandbox launcher also waits, but this closes the provider's
+    // own request race for every client.
+    let resolvedConnectModel = resolveConnectSelector(reqModelName);
+    if (!resolvedConnectModel.mapped && !hasLiveCatalog() && isConnectCatalogSyncInFlight()) {
+      const catalogWait = await Promise.race([
+        __waitForModelCatalogSync().then(() => 'settled'),
+        new Promise((resolve) => setTimeout(() => resolve('timeout'), 30_000)),
+      ]);
+      if (catalogWait === 'timeout' && isConnectCatalogSyncInFlight()) {
+        return {
+          status: 503,
+          headers: { 'Retry-After': '1' },
+          body: { error: {
+            message: 'The live model catalogue is still initializing. Retry this request shortly.',
+            type: 'service_unavailable',
+            code: 'model_catalog_initializing',
+          } },
+        };
+      }
+      // A successful sync may have made a cold-start-only selector visible. A
+      // failed/empty sync simply leaves it unmapped, and the normal strict 400
+      // below remains the honest terminal result.
+      resolvedConnectModel = resolveConnectSelector(reqModelName);
+    }
     // VISION reroute: when ACP vision is explicitly enabled, keep using the real
     // Devin CLI for its full multimodal session semantics. The direct Connect
     // path below can also carry source=USER images #10, including SWE-1.7, but ACP
@@ -3180,7 +3210,7 @@ async function _handleChatCompletionsInner(body, context = {}) {
         callerKey,
       }, context.specialAgent || {});
     }
-    const { selector, mapped } = resolveConnectSelector(reqModelName);
+    const { selector, mapped } = resolvedConnectModel;
     // P1 whitelist guard: an unmapped model name (mapped:false) means the request
     // does NOT resolve to any real DEVIN_CONNECT selector and would otherwise
     // silently degrade to the free-tier fallback (swe-1-6-slow) — the client
@@ -3263,10 +3293,10 @@ async function _handleChatCompletionsInner(body, context = {}) {
     // the trim was a prompt-emulation workaround, not a native-path need.
     const nativeToolFlag = isExperimentalEnabled('nativeToolCall');
     const _trim = nativeToolFlag
-      ? { tools: effectiveTools, trimmed: false, kept: Array.isArray(effectiveTools) ? effectiveTools.length : 0, dropped: 0 }
+      ? trimToolsForNativeLimit(effectiveTools, { toolChoice: tool_choice })
       : trimToolsForWeakModel(effectiveTools, reqModelName, { toolChoice: tool_choice });
     const connectTools = _trim.tools;
-    if (_trim.trimmed) log.warn(`Chat[${reqId}]: DEVIN_CONNECT weak model ${safeLogValue(reqModelName)} — trimmed tools ${effectiveTools.length}→${_trim.kept} (dropped ${_trim.dropped}) to avoid upstream overload`);
+    if (_trim.trimmed) log.warn(`Chat[${reqId}]: DEVIN_CONNECT ${nativeToolFlag ? 'native tool ceiling' : `weak model ${safeLogValue(reqModelName)}`} — trimmed tools ${effectiveTools.length}→${_trim.kept} (dropped ${_trim.dropped}) to avoid upstream overload`);
     const emulateTools = Array.isArray(connectTools) && connectTools.length > 0;
     // Double-send guard (#49): when the native ToolDef gate is calibrated, tools
     // also ride natively in the #10 `tools` field (connectParams.tools below), so

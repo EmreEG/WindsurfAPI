@@ -308,6 +308,35 @@ describe('DEVIN_CONNECT cross-account failover — non-stream', () => {
 });
 
 describe('DEVIN_CONNECT cross-account failover — stream', () => {
+  it('caps 129 native tools to 128 before calling upstream', async () => {
+    seed('native-tool-limit');
+    const tools = Array.from({ length: 129 }, (_, index) => ({
+      type: 'function',
+      function: {
+        name: `tool_${index}`,
+        description: `tool ${index}`,
+        parameters: { type: 'object', properties: {} },
+      },
+    }));
+    let receivedTools = null;
+    __setConnectDeps({
+      streamChatCompletion: async (params, send) => {
+        receivedTools = params.tools;
+        send({ id: 's', object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: 'OK' }, finish_reason: null }] });
+        send({ id: 's', object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
+      },
+    });
+
+    const result = await handleChatCompletions(
+      { model: 'swe-1-6-slow', stream: true, tools, messages: [{ role: 'user', content: 'hi' }] },
+      { callerKey: '' },
+    );
+    const res = fakeRes();
+    await result.handler(res);
+    assert.equal(receivedTools.length, 128);
+    assert.ok(parseFrames(res.body).some((frame) => frame !== '[DONE]' && frame.choices?.[0]?.delta?.content === 'OK'));
+  });
+
   it('fails over before any byte is emitted, then streams from the healthy account', async () => {
     const a = seed('s-dead-1');
     const b = seed('s-healthy-2');
