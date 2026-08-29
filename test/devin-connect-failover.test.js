@@ -676,6 +676,26 @@ describe('DEVIN_CONNECT quota vs tier wall (P1 #33)', () => {
 });
 
 describe('DEVIN_CONNECT pool exhaustion (P0-2)', () => {
+  it('waits out a short pool cooldown instead of leaking a 429 to Codex', async () => {
+    const account = seed('short-cooldown');
+    markRateLimited(account.apiKey, 1_100);
+    let upstreamHits = 0;
+    __setConnectDeps({
+      toChatCompletion: async () => {
+        upstreamHits++;
+        return { status: 200, body: { id: 'x', choices: [{ message: { role: 'assistant', content: 'RECOVERED' } }] } };
+      },
+    });
+    const started = Date.now();
+    const result = await handleChatCompletions(
+      { model: 'swe-1-6-slow', stream: false, messages: [{ role: 'user', content: 'hi' }] },
+      { callerKey: '' },
+    );
+    assert.equal(result.status, 200);
+    assert.equal(upstreamHits, 1);
+    assert.ok(Date.now() - started >= 900, 'request waited for the known short cooldown');
+  });
+
   it('returns a clean 429 with retry_after when the whole pool is rate-limited', async () => {
     const a = seed('exhaust-1');
     const b = seed('exhaust-2');

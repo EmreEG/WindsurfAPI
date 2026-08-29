@@ -1980,7 +1980,7 @@ function pickDegradedFallback(now, excludeKeys, modelKey, connectSelector) {
  * @param {string|null} [modelKey]
  * @param {string|null} [callerKey]
  * @param {string|null} [connectSelector]
- * @param {{ pinOnly?: boolean }} [opts] `pinOnly` makes the sticky arm NON-DESTRUCTIVE:
+ * @param {{ pinOnly?: boolean, allowDegraded?: boolean }} [opts] `pinOnly` makes the sticky arm NON-DESTRUCTIVE:
  *   return the pinned account if it is usable right now, otherwise return null WITHOUT
  *   clearing the binding and WITHOUT rotating to a substitute. It exists so an async
  *   caller can poll for its own pin (chat.js queue-on-pin) using the very same
@@ -1992,6 +1992,7 @@ function pickDegradedFallback(now, excludeKeys, modelKey, connectSelector) {
 export function getApiKey(excludeKeys = [], modelKey = null, callerKey = null, connectSelector = null, opts = {}) {
   const now = Date.now();
   const pinOnly = !!opts.pinOnly;
+  const allowDegraded = opts.allowDegraded !== false;
 
   // ── Sticky session: prefer the account from the last turn ────────
   // When enabled, this keeps multi-turn conversations on the same upstream
@@ -2132,7 +2133,7 @@ export function getApiKey(excludeKeys = [], modelKey = null, callerKey = null, c
     // architectural replacement for the isLastUsableAccount exemption patch: it
     // covers the single-account pool AND any pool where every entitled account is
     // momentarily throttled, without a special-case "last account" rule.
-    if (degradedServeEnabled()) {
+    if (allowDegraded && degradedServeEnabled()) {
       const fallback = pickDegradedFallback(now, excludeKeys, modelKey, connectSelector);
       if (fallback) {
         const reservationTimestamp = nextReservationToken(now);

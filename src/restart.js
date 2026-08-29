@@ -53,8 +53,9 @@ export function detectSupervisor(env = process.env) {
 /**
  * Gracefully drain then exit so a supervisor relaunches us.
  *
- * Ordering: abort SSE → close the HTTP server (wait for in-flight, bounded by
- * drainMs) → stop the LS pool (awaited so SIGTERM lands before we exit and
+ * Ordering: close the HTTP server → wait for in-flight streams, bounded by
+ * drainMs → abort only streams that exceed the deadline → stop the LS pool
+ * (awaited so SIGTERM lands before we exit and
  * reparent surviving children to init) → exit.
  *
  * Everything with a side effect is injected so this is unit-testable without a
@@ -80,18 +81,7 @@ export async function gracefulRestart({
 } = {}) {
   log.info(`restart: begin graceful restart (${reason || 'unspecified'})`);
 
-  // (a) Abort in-flight SSE streams so long-lived streaming responses don't
-  // pin the drain for the full drainMs window.
-  if (typeof abortSse === 'function') {
-    try {
-      const n = abortSse('server restarting');
-      if (n) log.warn(`restart: aborted ${n} active SSE stream(s)`);
-    } catch (e) {
-      log.warn(`restart: abortSse failed (continuing): ${e.message}`);
-    }
-  }
-
-  // (b) Close the HTTP server and wait for in-flight requests, bounded by
+  // (a) Close the HTTP server and wait for in-flight requests, bounded by
   // drainMs so a stuck request can never hang the restart forever.
   if (server && typeof server.close === 'function') {
     const inflight = server.getActiveRequests?.();
@@ -108,7 +98,17 @@ export async function gracefulRestart({
         log.info(`restart: drain ${why}`);
         resolve();
       };
-      const timer = setTimeout(() => finish('timeout — forcing exit'), drainMs);
+      const timer = setTimeout(() => {
+        if (typeof abortSse === 'function') {
+          try {
+            const n = abortSse('server restarting after drain timeout');
+            if (n) log.warn(`restart: drain timeout aborted ${n} active SSE stream(s)`);
+          } catch (e) {
+            log.warn(`restart: abortSse failed (continuing): ${e.message}`);
+          }
+        }
+        finish('timeout — forcing exit');
+      }, drainMs);
       try {
         server.close(() => finish('complete'));
       } catch (e) {
@@ -118,7 +118,7 @@ export async function gracefulRestart({
     });
   }
 
-  // (c) Stop the LS pool and wait for children to actually exit, so SIGTERM
+  // (b) Stop the LS pool and wait for children to actually exit, so SIGTERM
   // lands before process.exit reparents survivors to init (the H-4 orphan
   // race — orphan language_server processes hold pool ports).
   if (typeof stopLs === 'function') {
@@ -130,7 +130,7 @@ export async function gracefulRestart({
     }
   }
 
-  // (d) Exit with the supervisor-relaunch code.
+  // (c) Exit with the supervisor-relaunch code.
   log.info(`restart: exiting with code ${exitCode} for supervisor relaunch`);
   return exitFn(exitCode);
 }

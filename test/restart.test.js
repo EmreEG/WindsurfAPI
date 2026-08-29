@@ -82,15 +82,27 @@ describe('gracefulRestart', () => {
     assert.deepEqual(order, ['ls-stopped', 'exit']);
   });
 
-  it('aborts active SSE first when a hook is provided', async () => {
+  it('lets active SSE drain and does not abort when close completes', async () => {
     const order = [];
     const abortSse = () => { order.push('sse-aborted'); return 2; };
+    const server = { close(cb) { order.push('closed'); cb(); } };
     const stopLs = async () => order.push('ls-stopped');
     const exitFn = () => order.push('exit');
 
-    await gracefulRestart({ reason: 'test', abortSse, stopLs, exitFn });
+    await gracefulRestart({ reason: 'test', server, abortSse, stopLs, exitFn });
 
-    assert.deepEqual(order, ['sse-aborted', 'ls-stopped', 'exit']);
+    assert.deepEqual(order, ['closed', 'ls-stopped', 'exit']);
+  });
+
+  it('aborts active SSE only after the bounded drain timeout', async () => {
+    const order = [];
+    const abortSse = () => { order.push('sse-aborted'); return 2; };
+    const server = { close() { order.push('close-started'); } };
+    const exitFn = () => order.push('exit');
+
+    await gracefulRestart({ reason: 'test', drainMs: 20, server, abortSse, exitFn });
+
+    assert.deepEqual(order, ['close-started', 'sse-aborted', 'exit']);
   });
 
   it('uses a custom exitCode when provided', async () => {

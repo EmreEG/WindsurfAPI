@@ -2200,13 +2200,13 @@ export function __resetConnectDeps() {
 // (e.g. a fable) off a free account, which the upstream rejects as
 // permission_denied. modelKey stays null — connect selectors are a different
 // namespace from the Cascade catalog and must not hit the catalog model-allow filter.
-async function acquireConnectAccount(signal, callerKey, selector = null) {
+async function acquireConnectAccount(signal, callerKey, selector = null, allowDegraded = true) {
   // Empty pool (single-token deploy: only WINDSURF_API_KEY/DEVIN_CONNECT_TOKEN
   // in env) → there is nothing to wait for. Return null immediately for the
   // env-token fallback instead of blocking QUEUE_MAX_WAIT_MS on every request.
   if (getAccountCount().total === 0) return null;
   const tried = [];
-  const acct = await waitForAccount(tried, signal, QUEUE_MAX_WAIT_MS, null, callerKey, selector);
+  const acct = await waitForAccount(tried, signal, QUEUE_MAX_WAIT_MS, null, callerKey, selector, allowDegraded);
   return acct; // may be null → env-token fallback
 }
 
@@ -2632,7 +2632,7 @@ async function waitForOwnPin(tried, signal, modelKey, callerKey, connectSelector
   return NO_WAIT;
 }
 
-async function waitForAccount(tried, signal, maxWaitMs = QUEUE_MAX_WAIT_MS, modelKey = null, callerKey = null, connectSelector = null) {
+async function waitForAccount(tried, signal, maxWaitMs = QUEUE_MAX_WAIT_MS, modelKey = null, callerKey = null, connectSelector = null, allowDegraded = true) {
   const deadline = Date.now() + maxWaitMs;
   const pinWait = await waitForOwnPin(tried, signal, modelKey, callerKey, connectSelector);
   if (pinWait.acct) return pinWait.acct;
@@ -2644,7 +2644,7 @@ async function waitForAccount(tried, signal, maxWaitMs = QUEUE_MAX_WAIT_MS, mode
   // in-flight count — for a caller we now KNOW has gone. Bail instead, which is also what
   // the loop below would do on its next iteration.
   if (pinWait.aborted) return null;
-  let acct = getApiKey(tried, modelKey, callerKey, connectSelector);
+  let acct = getApiKey(tried, modelKey, callerKey, connectSelector, { allowDegraded });
   while (!acct) {
     if (signal?.aborted) return null;
     if (Date.now() >= deadline) return null;
@@ -2653,7 +2653,7 @@ async function waitForAccount(tried, signal, maxWaitMs = QUEUE_MAX_WAIT_MS, mode
       return null;
     }
     await new Promise(r => setTimeout(r, QUEUE_RETRY_MS));
-    acct = getApiKey(tried, modelKey, callerKey, connectSelector);
+    acct = getApiKey(tried, modelKey, callerKey, connectSelector, { allowDegraded });
   }
   return acct;
 }
@@ -3428,6 +3428,7 @@ async function _handleChatCompletionsInner(body, context = {}) {
     // may be minutes out) — return a fast 429 with an accurate retry_after so
     // the client backs off. A momentarily-busy (not rate-limited) account still
     // gets the queue benefit via acquireConnectAccount below.
+    let waitForPoolRecovery = false;
     if (getAccountCount().total > 0) {
       // No account entitled to this selector? (e.g. a paid selector like a fable
       // with only free-tier accounts in the pool.) Fail fast with a clear 403
@@ -3462,6 +3463,15 @@ async function _handleChatCompletionsInner(body, context = {}) {
       const degradable = getBreakerTunable('degradedServe') && rl.allLimited && !tu.allUnavailable;
       if ((rl.allLimited || tu.allUnavailable) && !degradable) {
         const retryAfterMs = rl.retryAfterMs || tu.retryAfterMs || 60000;
+        // If the only account recovers within the queue budget, keep this
+        // request server-side until it does. Returning immediately makes Codex
+        // spend its two retries inside the same known cooldown and surface
+        // "exceeded retry limit" even though the account becomes usable a few
+        // seconds later. Long quota/reset windows still return 429 immediately.
+        if (retryAfterMs <= QUEUE_MAX_WAIT_MS) {
+          log.info(`Chat[${reqId}]: DEVIN_CONNECT pool recovers in ${retryAfterMs}ms; waiting within ${QUEUE_MAX_WAIT_MS}ms queue budget`);
+          waitForPoolRecovery = true;
+        } else {
         // F3: clamp the advertised Retry-After so an agent client's auto-retry
         // backs off usefully (floor) and is never frozen by an over-long window
         // (ceil). header + body report the SAME clamped value.
@@ -3473,9 +3483,28 @@ async function _handleChatCompletionsInner(body, context = {}) {
           headers: { 'Retry-After': String(retryAfterSec) },
           body: { error: { message: `All DEVIN_CONNECT accounts are temporarily rate-limited. Retry in ~${retryAfterSec}s.`, type: 'rate_limit_exceeded', retry_after_ms: retryAfterSec * 1000 } },
         };
+        }
       }
     }
-    const ccAcct = await acquireConnectAccount(context.signal, callerKey, selector);
+    const ccAcct = await acquireConnectAccount(context.signal, callerKey, selector, !waitForPoolRecovery);
+    // A non-empty pool that stayed unavailable for the full queue budget must
+    // never fall through to the unaccounted env-token path. Recompute the
+    // current hint and return an honest throttle response.
+    if (getAccountCount().total > 0 && !ccAcct) {
+      const rl = isAllRateLimited(null, selector);
+      const tu = isAllTemporarilyUnavailable(null, selector);
+      const retryAfterMs = rl.retryAfterMs || tu.retryAfterMs || 60_000;
+      const retryAfterSec = clientRetryAfterSeconds(retryAfterMs);
+      return {
+        status: 429,
+        headers: { 'Retry-After': String(retryAfterSec) },
+        body: { error: {
+          message: `All DEVIN_CONNECT accounts remain temporarily unavailable. Retry in ~${retryAfterSec}s.`,
+          type: 'rate_limit_exceeded',
+          retry_after_ms: retryAfterSec * 1000,
+        } },
+      };
+    }
     const connectParams = { messages: connectMessages, model: selector };
     // Session continuity (opt-in, DEVIN_CONNECT_SESSION_REUSE, default OFF). Derive
     // a stable protobuf session_id (#16) from the conversation's completed request/
