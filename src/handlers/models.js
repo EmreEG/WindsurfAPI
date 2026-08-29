@@ -5,6 +5,17 @@ import {
 import { getBackendSwitch } from '../runtime-config.js';
 import { hasConnectEntitledAccount, getAccountCount } from '../auth.js';
 
+// Live end-to-end audit 2026-08-29: these legacy/synthetic selectors are
+// advertised by static compatibility sources but are not usable upstream.
+// SWE-1.5 variants return completed responses with no output; swe-1-6-slow
+// repeatedly returns UPSTREAM_INTERNAL. Keep discovery honest and never
+// silently substitute another billed model.
+export const UNAVAILABLE_CONNECT_MODELS = new Set([
+  'swe-1.5',
+  'swe-1.5-fast',
+  'swe-1-6-slow',
+]);
+
 // GET /v1/models. On a DEVIN_CONNECT deployment (the production transport) only
 // expose models that actually resolve to a real catalog selector — otherwise
 // /v1/models advertises ~90 models the account can't reach (they'd 400 at chat).
@@ -196,6 +207,11 @@ export function handleModels(env = process.env) {
         _source: 'free_reachable',
       });
     }
+    // Live audit 2026-08-29: these legacy/synthetic SWE routes are not usable
+    // through the current upstream. SWE-1.5 variants complete with empty output;
+    // swe-1-6-slow repeatedly returns UPSTREAM_INTERNAL. Do not advertise dead
+    // routes as available models, and do not silently substitute another model.
+    data = data.filter((model) => !UNAVAILABLE_CONNECT_MODELS.has(model.id));
   }
   return { object: 'list', data };
 }

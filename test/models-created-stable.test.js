@@ -54,7 +54,7 @@ describe('O13 MODEL_CREATED', () => {
     assert.equal(second.data[0].created, MODEL_CREATED);
   });
 
-  it('live_catalog and free_reachable rows use the same constant', () => {
+  it('live_catalog rows use the same constant and dead synthetic rows stay hidden', () => {
     setLiveCatalogSelectors([
       { selector: LIVE_ONLY, provider: 'xai', label: 'Grok 4.5 (medium)' },
     ]);
@@ -64,8 +64,7 @@ describe('O13 MODEL_CREATED', () => {
     assert.ok(live, 'live-only selector must be synthesized');
     assert.equal(live._source, 'live_catalog');
     assert.equal(live.created, MODEL_CREATED);
-    assert.ok(floor, 'free-reachable floor must be present');
-    assert.equal(floor.created, MODEL_CREATED);
+    assert.equal(floor, undefined, 'dead synthetic free selector must stay hidden');
     for (const row of first.data) {
       assert.equal(row.created, MODEL_CREATED);
     }
@@ -73,7 +72,7 @@ describe('O13 MODEL_CREATED', () => {
     const second = handleModels(ENV_ON);
     assert.deepEqual(createdValues(first), createdValues(second));
     assert.equal(second.data.find((row) => row.id === LIVE_ONLY).created, MODEL_CREATED);
-    assert.equal(second.data.find((row) => row.id === FREE_SELECTOR).created, MODEL_CREATED);
+    assert.equal(second.data.find((row) => row.id === FREE_SELECTOR), undefined);
   });
 
   it('does not re-read Date.now inside listModels or the models handler', () => {

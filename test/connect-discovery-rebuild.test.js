@@ -100,9 +100,8 @@ describe('connect discovery — entitlement filter (#234)', () => {
     mk('free');
 
     const rows = ids();
-    assert.ok(rows.length > 0, 'zero models breaks client startup entirely');
-    assert.ok(rows.includes(FREE_SELECTOR),
-      'the one selector any account can run must be discoverable');
+    assert.ok(!rows.includes(FREE_SELECTOR),
+      'a repeatedly failing synthetic selector must not be advertised');
   });
 
   it('widens discovery when a paid account joins the pool', () => {
@@ -115,7 +114,6 @@ describe('connect discovery — entitlement filter (#234)', () => {
 
     assert.ok(withPaid.length > freeOnly.length,
       `adding a paid account must widen discovery (was ${freeOnly.length}, now ${withPaid.length})`);
-    assert.ok(withPaid.includes(FREE_SELECTOR), 'the free selector stays listed');
   });
 
   it('treats a complete non-empty live catalog as authoritative over the frozen snapshot', () => {
@@ -130,7 +128,6 @@ describe('connect discovery — entitlement filter (#234)', () => {
       'the selector confirmed by the live catalog must be advertised');
     assert.ok(!rows.includes('gpt-5.5'),
       'a snapshot-only model must not be advertised after every contributor has live data');
-    assert.ok(rows.includes(FREE_SELECTOR), 'the universal free floor stays advertised');
   });
 
   it('does not log paid-request downgrade warnings while building discovery', () => {
@@ -216,17 +213,15 @@ describe('connect discovery — entitlement filter (#234)', () => {
     mk('free');
 
     const LIVE_ONLY_PAID = 'gpt-5-6-sol-max';
-    const LIVE_ONLY_FREE = 'swe-1-6-slow';
     setLiveCatalogSelectors([
       { selector: LIVE_ONLY_PAID, provider: 'openai' },
-      { selector: LIVE_ONLY_FREE, provider: 'windsurf' },
     ]);
 
     const rows = handleModels(process.env).data;
     const emitted = rows.map((m) => m.id);
 
-    assert.ok(emitted.includes(LIVE_ONLY_FREE),
-      'precondition: the live catalog is populated and its free selector is emitted');
+    assert.ok(!emitted.includes(FREE_SELECTOR),
+      'the dead synthetic selector must not be used to make the result non-empty');
     assert.ok(!emitted.includes(LIVE_ONLY_PAID),
       'the live_catalog producer must apply the entitlement filter too — a free-only ' +
       'pool must not advertise a live-only paid selector');

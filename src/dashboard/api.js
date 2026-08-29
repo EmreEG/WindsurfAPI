@@ -48,7 +48,7 @@ import { getCcCompatStats } from '../handlers/cc-compat.js';
 import { getLogs, subscribeToLogs, unsubscribeFromLogs } from './logger.js';
 import { getProxyConfig, getProxyConfigMasked, setGlobalProxy, setAccountProxy, removeProxy, getEffectiveProxy } from './proxy-config.js';
 import { MODELS, MODEL_TIER_ACCESS as _TIER_TABLE, getTierModels as _getTierModels, filterModelKeysByCloudCatalog } from '../models.js';
-import { buildConnectReachability } from '../handlers/models.js';
+import { buildConnectReachability, UNAVAILABLE_CONNECT_MODELS } from '../handlers/models.js';
 import { FREE_REACHABLE_SELECTORS, getLiveCatalog } from '../devin-connect-models.js';
 import { windsurfLogin, refreshFirebaseToken, reRegisterWithCodeium } from './windsurf-login.js';
 import { getModelAccessConfig, setModelAccessMode, setModelAccessList, addModelToList, removeModelFromList, setDefaultModel } from './model-access.js';
@@ -2243,6 +2243,9 @@ export async function handleDashboardApi(method, subpath, body, req, res) {
         currentlyFree: connectCurrentlyFree(selector),
       };
     });
+    for (let index = models.length - 1; index >= 0; index--) {
+      if (UNAVAILABLE_CONNECT_MODELS.has(models[index].id)) models.splice(index, 1);
+    }
     // Selectors that ARE serveable but have no MODELS row (`swe-1-6-slow` is in neither the
     // frozen snapshot nor the live catalog, so it appears in no Cascade-derived list). They
     // are the whole point of the panel on a free deployment, so synthesize them here the
@@ -2284,7 +2287,7 @@ export async function handleDashboardApi(method, subpath, body, req, res) {
       }
 
       for (const selector of FREE_REACHABLE_SELECTORS) {
-        if (seen.has(selector)) continue;
+        if (seen.has(selector) || UNAVAILABLE_CONNECT_MODELS.has(selector)) continue;
         seen.add(selector);
         models.push({
           id: selector,

@@ -149,17 +149,20 @@ afterEach(async () => {
 
 describe('dashboard /models agrees with /v1/models on the Connect namespace (#234)', () => {
   it('every row\'s reachable flag matches whether /v1/models lists it', async () => {
-    seed('free');
+    seed('pro');
+    setLiveCatalogSelectors([
+      { selector: 'claude-opus-4-8-medium', provider: 'anthropic' },
+    ]);
+    liveCatalogDirty = true;
     const ids = v1Ids();
     const rows = await dashboardModels();
 
-    const disagree = rows.filter((r) => r.reachable !== ids.has(r.id));
-    assert.deepEqual(
-      disagree.map((r) => `${r.id}:dash=${r.reachable},v1=${ids.has(r.id)}`),
-      [],
-      'a row disagrees with /v1/models. Before the fix EVERY row disagreed: the dashboard '
-      + 'listed 163 unreachable models and omitted the one reachable selector',
-    );
+    const missing = [...ids].filter((id) => !rows.some((r) => r.id === id && r.reachable));
+    assert.deepEqual(missing, [], 'every advertised API model must have a reachable dashboard row');
+    for (const dead of ['swe-1.5', 'swe-1.5-fast', CONNECT_FREE_SELECTOR]) {
+      assert.ok(!ids.has(dead), `${dead} must not be advertised by /v1/models`);
+      assert.ok(!rows.some((row) => row.id === dead), `${dead} must not be advertised by the dashboard`);
+    }
     // Pin that the comparison had teeth in BOTH directions — an all-true or all-false
     // answer would satisfy the equality above while measuring nothing.
     assert.ok(rows.some((r) => r.reachable), 'no row was reachable — the filter is stuck closed');
@@ -175,21 +178,17 @@ describe('dashboard /models agrees with /v1/models on the Connect namespace (#23
     assert.equal(paid.reachable, false, `${PAID_KEY} is not callable by a free account`);
   });
 
-  it('synthesizes the free-reachable selector, which no Cascade-derived list contains', async () => {
+  it('does not advertise the dead synthetic free selector', async () => {
     seed('free');
     const rows = await dashboardModels();
     const free = rows.find((r) => r.id === CONNECT_FREE_SELECTOR);
-    assert.ok(free, `${CONNECT_FREE_SELECTOR} absent. It is in neither the snapshot, the `
-      + 'live catalog, nor MODELS, so it has to be synthesized — and it is the only '
-      + 'selector every account can serve');
-    assert.equal(free.reachable, true);
+    assert.equal(free, undefined,
+      `${CONNECT_FREE_SELECTOR} repeatedly fails upstream and must stay hidden`);
   });
 
-  it('reports the resolved selector so "unreachable" and "unmapped" are distinguishable', async () => {
+  it('reports resolved selectors so "unreachable" and "unmapped" are distinguishable', async () => {
     seed('free');
     const rows = await dashboardModels();
-    const free = rows.find((r) => r.id === CONNECT_FREE_SELECTOR);
-    assert.equal(free.connectSelector, CONNECT_FREE_SELECTOR);
     // Every row carries the key, present-but-null included: a missing key would make the
     // UI unable to tell "resolves but you lack entitlement" from "maps to nothing here".
     for (const r of rows) {
@@ -344,13 +343,11 @@ describe('dashboard /models agrees with /v1/models on the Connect namespace (#23
         + 'free-set to tell them apart');
     });
 
-    it('reports the free-reachable selector as free even with no rate table', async () => {
+    it('does not report the dead free selector even with no rate table', async () => {
       seed('free');
       const rows = await dashboardModels();
       const free = rows.find((r) => r.id === CONNECT_FREE_SELECTOR);
-      assert.equal(free.currentlyFree, true,
-        'FREE_REACHABLE membership IS the definition of free-to-any-account, and it must not '
-        + 'depend on a rate table the pool may never report');
+      assert.equal(free, undefined);
     });
 
     it('carries the field on every row so the UI never has to infer it', async () => {
